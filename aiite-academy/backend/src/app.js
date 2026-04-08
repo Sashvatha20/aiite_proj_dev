@@ -28,6 +28,8 @@ app.use('/api/followups',   require('./routes/followups'));
 app.use('/api/placements',  require('./routes/placements'));
 app.use('/api/watercan',    require('./routes/watercan'));
 app.use('/api/admin',       require('./routes/admin'));
+app.use('/api/assessments',  require('./routes/assessments'));
+app.use('/api/mentor-feedback', require('./routes/mentor-feedback'));
 
 // Global error handler
 app.use((err, req, res, next) => {

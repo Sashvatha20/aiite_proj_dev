@@ -1,5 +1,3 @@
 import api from './axiosInstance';
-export const getDashboard     = ()       => api.get('/admin/dashboard');
-export const getNotifications = ()       => api.get('/admin/notifications');
-export const getTrainers      = ()       => api.get('/trainers');
-export const getCourses       = ()       => api.get('/trainers/courses');
+export const getDashboard    = ()       => api.get('/admin/dashboard');
+export const getTrainerStats = (params) => api.get('/admin/trainers', { params });
