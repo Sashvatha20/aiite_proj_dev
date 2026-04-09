@@ -52,7 +52,7 @@ export default function Assessment() {
     batch_id: '', student_id: '', assessment_date: today(),
     topic_covered: '', no_of_questions_asked: '',
     feedback_rating: 'good', outcome_remarks: '',
-    session_type: 'weekday', no_of_participants: '',
+    session_type: 'regular', no_of_participants: '',
     session_hours: '', wa_sent: false
   };
   const [form, setForm] = useState(blank);
@@ -134,7 +134,7 @@ ${form.outcome_remarks ? 'Remarks: ' + form.outcome_remarks : ''}`.trim();
       no_of_questions_asked: a.no_of_questions_asked || '',
       feedback_rating:       a.feedback_rating     || 'good',
       outcome_remarks:       a.outcome_remarks     || '',
-      session_type:          a.session_type        || 'weekday',
+      session_type:          a.session_type        || 'regular',
       no_of_participants:    a.no_of_participants  || '',
       session_hours:         a.session_hours       || '',
       wa_sent:               a.wa_sent             || false,
@@ -191,8 +191,9 @@ ${form.outcome_remarks ? 'Remarks: ' + form.outcome_remarks : ''}`.trim();
               <div style={S.field}>
                 <label style={S.label}>Session type</label>
                 <select style={S.select} value={form.session_type} onChange={e => set('session_type', e.target.value)}>
-                  <option value="weekday">Weekday</option>
-                  <option value="weekend">Weekend</option>
+                  <option value="regular">Regular</option>
+                  <option value="crash">Crash</option>
+                  <option value="recorded">Recorded</option>
                 </select>
               </div>
               <div style={S.field}>

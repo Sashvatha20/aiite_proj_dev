@@ -5,6 +5,7 @@ import api from '../../api/axiosInstance';
 const getEscalations   = (params)   => api.get('/escalations', { params });
 const createEscalation = (data)     => api.post('/escalations', data);
 const updateEscalation = (id, data) => api.put(`/escalations/${id}`, data);
+const getTrainers      = ()         => api.get('/trainers');
 
 const G = '#1D9E75';
 const S = {
@@ -15,7 +16,6 @@ const S = {
   tab:      { padding:'7px 14px', fontSize:12, cursor:'pointer', borderBottom:'2px solid transparent', color:'#888' },
   tabA:     { borderBottomColor:G, color:G, fontWeight:500 },
   row2:     { display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10 },
-  row3:     { display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10, marginBottom:10 },
   field:    { marginBottom:10 },
   label:    { fontSize:11, color:'#666', display:'block', marginBottom:3 },
   input:    { width:'100%', padding:'7px 10px', border:'1px solid #ddd', borderRadius:8, fontSize:12, outline:'none', boxSizing:'border-box' },
@@ -29,8 +29,8 @@ const S = {
   td:       { padding:'8px 10px', borderBottom:'1px solid #f5f5f5', color:'#333', verticalAlign:'top' },
   actBtn:   { fontSize:10, padding:'3px 8px', borderRadius:6, border:'1px solid #ddd', background:'#fff', cursor:'pointer', marginRight:4 },
   badge:    (c) => ({ fontSize:10, padding:'2px 8px', borderRadius:10,
-    background: c==='green'?'#E1F5EE': c==='orange'?'#FEF3C7': c==='red'?'#FCEBEB': c==='blue'?'#E6F1FB':'#f0f0f0',
-    color:      c==='green'?'#0F6E56': c==='orange'?'#92400E': c==='red'?'#A32D2D': c==='blue'?'#185FA5':'#666' }),
+    background: c==='green'?'#E1F5EE': c==='orange'?'#FEF3C7': c==='red'?'#FCEBEB':'#f0f0f0',
+    color:      c==='green'?'#0F6E56': c==='orange'?'#92400E': c==='red'?'#A32D2D':'#666' }),
   waBox:    { background:'#E1F5EE', border:'1px solid #9FE1CB', borderRadius:8, padding:'12px 14px', fontSize:11, color:'#0F6E56', marginTop:10 },
   waBtn:    { marginTop:10, padding:'7px 16px', background:'#25D366', color:'#fff', border:'none', borderRadius:8, fontSize:12, cursor:'pointer' },
   kpiGrid:  { display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))', gap:12, marginBottom:16 },
@@ -38,6 +38,7 @@ const S = {
   kpiNum:   { fontSize:22, fontWeight:700, color:'#222', lineHeight:1 },
   kpiLabel: { fontSize:10, color:'#888', marginTop:3 },
   warnBox:  { background:'#FEF3C7', border:'1px solid #FCD34D', borderRadius:8, padding:'10px 14px', fontSize:11, color:'#92400E', marginBottom:12 },
+  autoTag:  { fontSize:10, background:'#E1F5EE', color:'#0F6E56', padding:'4px 10px', borderRadius:6, display:'inline-block', marginTop:2 },
 };
 
 const today = () => new Date().toISOString().split('T')[0];
@@ -45,23 +46,41 @@ const STATUSES = ['open','acknowledged','resolved'];
 const statusColor = s => s==='resolved'?'green': s==='acknowledged'?'orange':'red';
 
 export default function Escalation() {
-  const [tab, setTab]             = useState(0);
+  const [tab, setTab]               = useState(0);
   const [escalations, setEscalations] = useState([]);
-  const [loading, setLoading]     = useState(false);
-  const [editId, setEditId]       = useState(null);
+  const [trainers, setTrainers]     = useState([]);
+  const [loading, setLoading]       = useState(false);
+  const [editId, setEditId]         = useState(null);
   const [filterStatus, setFilterStatus] = useState('');
 
+  // ✅ Get logged-in trainer name from JWT stored in localStorage/memory
+  const currentUser = (() => {
+    try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token') || '';
+      if (!token) return { name: 'You', trainerId: null };
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      return { name: payload.name || 'You', trainerId: payload.trainerId };
+    } catch { return { name: 'You', trainerId: null }; }
+  })();
+
   const blank = {
+    trainer_id: '',        // ✅ who is being reported AGAINST
     escalation_date: today(),
-    reported_by: '',
     description: '',
     no_of_count: 1,
     status: 'open',
-    wa_sent: false
   };
   const [form, setForm] = useState(blank);
 
-  useEffect(() => { loadEscalations(); }, []);
+  useEffect(() => {
+    loadEscalations();
+    // ✅ Load all trainers for "Reported against" dropdown
+    getTrainers().then(r => {
+      const all = r.data.trainers || r.data || [];
+      // Exclude yourself from the dropdown
+      setTrainers(all.filter(t => t.id !== currentUser.trainerId));
+    }).catch(() => {});
+  }, []);
 
   const loadEscalations = async () => {
     try {
@@ -72,31 +91,37 @@ export default function Escalation() {
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
+  const selectedTrainer = trainers.find(t => String(t.id) === String(form.trainer_id));
+
   // WhatsApp message builder
   const buildWA = () =>
     `⚠️ Escalation Report (${form.escalation_date})
 
-Reported by: ${form.reported_by || '—'}
+Reported by: ${currentUser.name}
+Reported against: ${selectedTrainer?.name || '—'}
 No. of incidents: ${form.no_of_count || 1}
-Status: ${form.status?.charAt(0).toUpperCase() + form.status?.slice(1)}
 
 Description:
 ${form.description || '—'}`.trim();
 
   const openWA = () => {
     window.open(`https://web.whatsapp.com/send?text=${encodeURIComponent(buildWA())}`, '_blank');
-    set('wa_sent', true);
     toast.success('WhatsApp opened — select contact manually');
   };
 
-  const showWAPreview = form.reported_by || form.description;
-
   const handleSubmit = async () => {
+    if (!form.trainer_id) return toast.error('Please select who you are reporting against');
     if (!form.description) return toast.error('Please describe the escalation');
-    if (!form.reported_by)  return toast.error('Please enter who reported this');
     setLoading(true);
     try {
-      const payload = { ...form, no_of_count: parseInt(form.no_of_count) || 1 };
+      // ✅ Send trainer_id (reported against) + reported_by is auto-set on backend from JWT
+      const payload = {
+        trainer_id:      form.trainer_id,
+        escalation_date: form.escalation_date,
+        description:     form.description,
+        no_of_count:     parseInt(form.no_of_count) || 1,
+        status:          form.status,
+      };
       if (editId) {
         await updateEscalation(editId, payload);
         toast.success('Escalation updated!');
@@ -115,17 +140,15 @@ ${form.description || '—'}`.trim();
 
   const handleEdit = (e) => {
     setForm({
+      trainer_id:      e.trainer_id      || '',
       escalation_date: e.escalation_date?.split('T')[0] || today(),
-      reported_by:     e.reported_by  || '',
-      description:     e.description  || '',
-      no_of_count:     e.no_of_count  ?? 1,
-      status:          e.status       || 'open',
-      wa_sent:         e.wa_sent      || false,
+      description:     e.description     || '',
+      no_of_count:     e.no_of_count     ?? 1,
+      status:          e.status          || 'open',
     });
     setEditId(e.id); setTab(0);
   };
 
-  // KPIs
   const kpis = {
     total:        escalations.length,
     open:         escalations.filter(e => e.status === 'open').length,
@@ -165,14 +188,27 @@ ${form.description || '—'}`.trim();
               </div>
             )}
 
+            {/* ✅ Auto-filled reporter info — no manual input */}
+            <div style={{background:'#f0faf6',borderRadius:8,padding:'8px 12px',fontSize:11,color:'#0F6E56',marginBottom:12,display:'flex',alignItems:'center',gap:8}}>
+              <span>👤 Reporting as:</span>
+              <span style={S.autoTag}>{currentUser.name}</span>
+              <span style={{color:'#888',fontSize:10}}>(auto-filled from your login)</span>
+            </div>
+
             <div style={S.row2}>
               <div style={S.field}>
                 <label style={S.label}>Escalation date</label>
                 <input style={S.input} type="date" value={form.escalation_date} onChange={e=>set('escalation_date',e.target.value)}/>
               </div>
+              {/* ✅ "Reported against" — who is being complained about */}
               <div style={S.field}>
-                <label style={S.label}>Reported by *</label>
-                <input style={S.input} value={form.reported_by} onChange={e=>set('reported_by',e.target.value)} placeholder="Name of person who reported this"/>
+                <label style={S.label}>Reported against *</label>
+                <select style={S.select} value={form.trainer_id} onChange={e=>set('trainer_id',e.target.value)}>
+                  <option value="">Select trainer / staff</option>
+                  {trainers.map(t=>(
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
               </div>
             </div>
 
@@ -200,20 +236,17 @@ ${form.description || '—'}`.trim();
             </div>
 
             {/* WhatsApp Preview */}
-            {showWAPreview && (
+            {(form.description || form.trainer_id) && (
               <div style={S.waBox}>
                 <div style={{fontWeight:600,marginBottom:6}}>📱 WhatsApp message preview:</div>
                 <div style={{whiteSpace:'pre-wrap',lineHeight:1.8,fontFamily:'monospace',fontSize:11}}>{buildWA()}</div>
-                <button style={S.waBtn} onClick={openWA}>
-                  Open WhatsApp Web → select contact manually
-                </button>
-                {form.wa_sent && <span style={{marginLeft:10,fontSize:10,color:'#0F6E56',fontWeight:500}}>✓ Sent</span>}
+                <button style={S.waBtn} onClick={openWA}>Open WhatsApp Web</button>
               </div>
             )}
 
             <div style={S.btnRow}>
               <button style={S.btnP} onClick={handleSubmit} disabled={loading}>
-                {loading?'Saving...':editId?'Update escalation':'Submit escalation'}
+                {loading ? 'Saving...' : editId ? '💾 Update escalation' : '⚠️ Submit escalation'}
               </button>
               <button style={S.btn} onClick={()=>{setForm(blank);setEditId(null);}}>Clear</button>
             </div>
@@ -225,66 +258,47 @@ ${form.description || '—'}`.trim();
           <div>
             {/* KPIs */}
             <div style={S.kpiGrid}>
-              {[
-                { num: kpis.total,        label:'Total',        accent:'#222' },
-                { num: kpis.open,         label:'🔴 Open',       accent:'#A32D2D' },
-                { num: kpis.acknowledged, label:'🟡 Acknowledged',accent:'#92400E' },
-                { num: kpis.resolved,     label:'✅ Resolved',   accent:G },
-              ].map((k,i)=>(
-                <div key={i} style={S.kpi}>
-                  <div style={{...S.kpiNum,color:k.accent}}>{k.num}</div>
-                  <div style={S.kpiLabel}>{k.label}</div>
+              {[['Total',kpis.total,''],['Open',kpis.open,'red'],['Acknowledged',kpis.acknowledged,'orange'],['Resolved',kpis.resolved,'green']].map(([label,val,col])=>(
+                <div key={label} style={S.kpi}>
+                  <div style={{...S.kpiNum,color:col==='red'?'#A32D2D':col==='orange'?'#92400E':col==='green'?'#0F6E56':'#222'}}>{val}</div>
+                  <div style={S.kpiLabel}>{label}</div>
                 </div>
               ))}
             </div>
 
-            {/* Status filter */}
-            <div style={{display:'flex',gap:8,marginBottom:12}}>
-              <select style={{...S.select,maxWidth:180}} value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}>
+            <div style={{marginBottom:12,display:'flex',gap:8,alignItems:'center'}}>
+              <label style={{...S.label,marginBottom:0}}>Filter:</label>
+              <select style={{...S.select,maxWidth:160}} value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}>
                 <option value="">All statuses</option>
                 {STATUSES.map(s=><option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>)}
               </select>
-              <span style={{fontSize:11,color:'#888',alignSelf:'center'}}>{filtered.length} record{filtered.length!==1?'s':''}</span>
             </div>
 
             {filtered.length===0
-              ? <div style={{textAlign:'center',padding:'40px 20px',color:'#aaa',fontSize:12}}>
-                  <div style={{fontSize:28,marginBottom:8}}>✅</div>No escalations — all clear!
-                </div>
+              ? <div style={{textAlign:'center',padding:'30px',color:'#aaa',fontSize:12}}>No escalations found</div>
               : (
                 <table style={S.table}>
                   <thead>
                     <tr>
                       <th style={S.th}>Date</th>
                       <th style={S.th}>Reported by</th>
+                      <th style={S.th}>Reported against</th>
+                      <th style={S.th}>Incidents</th>
                       <th style={S.th}>Description</th>
-                      <th style={S.th}>Count</th>
                       <th style={S.th}>Status</th>
-                      <th style={S.th}>WA</th>
                       <th style={S.th}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filtered.map(e=>(
                       <tr key={e.id}>
-                        <td style={S.td}>{e.escalation_date?.split('T')[0]||'—'}</td>
-                        <td style={S.td}><strong>{e.reported_by||'—'}</strong></td>
-                        <td style={{...S.td, maxWidth:280}}>
-                          <div style={{fontSize:11,color:'#444',lineHeight:1.5,
-                            display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'}}>
-                            {e.description||'—'}
-                          </div>
-                        </td>
-                        <td style={S.td}>{e.no_of_count||1}</td>
-                        <td style={S.td}>
-                          <span style={S.badge(statusColor(e.status))}>
-                            {e.status?.charAt(0).toUpperCase()+e.status?.slice(1)}
-                          </span>
-                        </td>
-                        <td style={S.td}><span style={S.badge(e.wa_sent?'green':'')}>{e.wa_sent?'Sent':'—'}</span></td>
-                        <td style={S.td}>
-                          <button style={S.actBtn} onClick={()=>handleEdit(e)}>✎ Edit</button>
-                        </td>
+                        <td style={S.td}>{e.escalation_date?.split('T')[0]}</td>
+                        <td style={S.td}>{e.reported_by || '—'}</td>
+                        <td style={S.td}>{e.trainer_name || '—'}</td>
+                        <td style={S.td}>{e.no_of_count}</td>
+                        <td style={{...S.td,maxWidth:220}}><div style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:220}}>{e.description}</div></td>
+                        <td style={S.td}><span style={S.badge(statusColor(e.status))}>{e.status}</span></td>
+                        <td style={S.td}><button style={S.actBtn} onClick={()=>handleEdit(e)}>✎ Edit</button></td>
                       </tr>
                     ))}
                   </tbody>

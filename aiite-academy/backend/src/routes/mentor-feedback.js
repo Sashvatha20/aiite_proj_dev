@@ -3,6 +3,8 @@ const router  = express.Router();
 const pool    = require('../db');
 const auth    = require('../middleware/auth');
 
+const nullIfEmpty = v => (v === '' || v === undefined || v === null) ? null : v;
+
 // GET /api/mentor-feedback — trainer's own records
 router.get('/', auth, async (req, res) => {
   try {
@@ -12,10 +14,14 @@ router.get('/', auth, async (req, res) => {
       FROM mentor_feedback mf
       LEFT JOIN batches b ON mf.batch_id = b.id
       LEFT JOIN courses c ON b.course_id = c.id
-      WHERE mf.trainer_id = $1
+      WHERE 1=1
     `;
-    const params = [req.user.trainerId];
-    let i = 2;
+    const params = []; let i = 1;
+    // ✅ only filter by trainer if trainerId exists (skip for admin)
+    if (req.user.trainerId) {
+      query += ` AND mf.trainer_id = $${i++}`;
+      params.push(req.user.trainerId);
+    }
     if (batch_id) { query += ` AND mf.batch_id = $${i++}`; params.push(batch_id); }
     query += ` ORDER BY mf.last_updated_date DESC NULLS LAST, mf.created_at DESC`;
     const result = await pool.query(query, params);
@@ -26,7 +32,7 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
-// GET /api/mentor-feedback/all — admin view
+// GET /api/mentor-feedback/all — admin view (must be before /:id)
 router.get('/all', auth, async (req, res) => {
   try {
     const { trainer_id, batch_id } = req.query;
@@ -55,36 +61,39 @@ router.post('/', auth, async (req, res) => {
     const {
       batch_id, total_members, form_shared,
       received_response, pending, followup_notes,
-      google_form_link, last_updated_date, wa_sent
+      google_form_link, last_updated_date
+      // ✅ removed wa_sent — no such column in mentor_feedback table
     } = req.body;
 
     if (!batch_id)
       return res.status(400).json({ error: 'Batch is required' });
 
+    if (!req.user.trainerId)
+      return res.status(400).json({ error: 'Trainer ID not found in token. Please re-login.' });
+
     const result = await pool.query(
       `INSERT INTO mentor_feedback
         (batch_id, trainer_id, total_members, form_shared,
          received_response, pending, followup_notes,
-         google_form_link, last_updated_date, wa_sent)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         google_form_link, last_updated_date)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
        RETURNING *`,
       [
         batch_id,
         req.user.trainerId,
-        total_members     || null,
-        form_shared       || false,
-        received_response || 0,
-        pending           || 0,
-        followup_notes    || null,
-        google_form_link  || null,
-        last_updated_date || new Date(),
-        wa_sent           || false
+        nullIfEmpty(total_members),
+        form_shared === true || form_shared === 'true' ? true : false,
+        nullIfEmpty(received_response) || 0,
+        nullIfEmpty(pending) || 0,
+        nullIfEmpty(followup_notes),
+        nullIfEmpty(google_form_link),
+        nullIfEmpty(last_updated_date) || new Date(),
       ]
     );
     res.status(201).json({ message: 'Mentor feedback saved', feedback: result.rows[0] });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to save mentor feedback' });
+    console.error('Mentor feedback save error:', err.message);
+    res.status(500).json({ error: 'Failed to save mentor feedback', detail: err.message });
   }
 });
 
@@ -93,8 +102,8 @@ router.put('/:id', auth, async (req, res) => {
   try {
     const {
       total_members, form_shared, received_response,
-      pending, followup_notes, google_form_link,
-      last_updated_date, wa_sent
+      pending, followup_notes, google_form_link, last_updated_date
+      // ✅ removed wa_sent
     } = req.body;
 
     const result = await pool.query(
@@ -106,22 +115,27 @@ router.put('/:id', auth, async (req, res) => {
         followup_notes    = COALESCE($5, followup_notes),
         google_form_link  = COALESCE($6, google_form_link),
         last_updated_date = COALESCE($7, last_updated_date),
-        wa_sent           = COALESCE($8, wa_sent),
         updated_at        = NOW()
-       WHERE id = $9 AND trainer_id = $10
+       WHERE id = $8 AND trainer_id = $9
        RETURNING *`,
       [
-        total_members, form_shared, received_response,
-        pending, followup_notes, google_form_link,
-        last_updated_date, wa_sent,
-        req.params.id, req.user.trainerId
+        nullIfEmpty(total_members),
+        form_shared !== undefined && form_shared !== '' ? (form_shared === true || form_shared === 'true') : null,
+        nullIfEmpty(received_response),
+        nullIfEmpty(pending),
+        nullIfEmpty(followup_notes),
+        nullIfEmpty(google_form_link),
+        nullIfEmpty(last_updated_date),
+        req.params.id,
+        req.user.trainerId
       ]
     );
     if (result.rows.length === 0)
-      return res.status(404).json({ error: 'Record not found' });
+      return res.status(404).json({ error: 'Record not found or not yours' });
     res.json({ message: 'Mentor feedback updated', feedback: result.rows[0] });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to update mentor feedback' });
+    console.error('Mentor feedback update error:', err.message);
+    res.status(500).json({ error: 'Failed to update mentor feedback', detail: err.message });
   }
 });
 

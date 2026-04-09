@@ -6,6 +6,7 @@ import Login          from './pages/login/Login';
 import TrainerLayout  from './pages/trainer/TrainerLayout';
 import AdminLayout    from './pages/admin/AdminLayout';
 
+
 function ProtectedRoute({ children, role }) {
   const { user, loading } = useAuth();
   if (loading) return <div style={{padding:'2rem'}}>Loading...</div>;

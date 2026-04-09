@@ -16,20 +16,22 @@ app.get('/', (req, res) => {
   res.json({ message: 'AiiTE Academy API is running' });
 });
 
-// Routes — we will add these one by one
-app.use('/api/auth',        require('./routes/auth'));
-app.use('/api/trainers',    require('./routes/trainers'));
-app.use('/api/batches',     require('./routes/batches'));
-app.use('/api/students',    require('./routes/students'));
-app.use('/api/worklog',     require('./routes/worklog'));
-app.use('/api/enquiries',   require('./routes/enquiries'));
-app.use('/api/escalations', require('./routes/escalations'));
-app.use('/api/followups',   require('./routes/followups'));
-app.use('/api/placements',  require('./routes/placements'));
-app.use('/api/watercan',    require('./routes/watercan'));
-app.use('/api/admin',       require('./routes/admin'));
-app.use('/api/assessments',  require('./routes/assessments'));
-app.use('/api/mentor-feedback', require('./routes/mentor-feedback'));
+// Routes
+app.use('/api/auth',              require('./routes/auth'));
+app.use('/api/trainers',          require('./routes/trainers'));
+app.use('/api/batches',           require('./routes/batches'));
+app.use('/api/students',          require('./routes/students'));
+app.use('/api/worklog',           require('./routes/worklog'));
+app.use('/api/enquiries',         require('./routes/enquiries'));
+app.use('/api/escalations',       require('./routes/escalations'));
+app.use('/api/followups',         require('./routes/followups'));
+app.use('/api/student-followups', require('./routes/followups'));
+app.use('/api/placements',        require('./routes/placements'));
+app.use('/api/watercan',          require('./routes/watercan'));
+app.use('/api/admin',             require('./routes/admin'));
+app.use('/api/assessments',       require('./routes/assessments'));
+app.use('/api/mentor-feedback',   require('./routes/mentor-feedback'));
+app.use('/api/attendance',        require('./routes/attendance'));  // ✅ moved here
 
 // Global error handler
 app.use((err, req, res, next) => {

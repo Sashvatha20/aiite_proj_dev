@@ -1,9 +1,11 @@
 const express = require('express');
-const router  = express.Router();
+const router  = require('express').Router();
 const pool    = require('../db');
 const auth    = require('../middleware/auth');
 
-// GET /api/assessments — trainer's own records
+const nullIfEmpty = v => (v === '' || v === undefined || v === null) ? null : v;
+
+// GET /api/assessments
 router.get('/', auth, async (req, res) => {
   try {
     const { batch_id, student_id } = req.query;
@@ -12,10 +14,9 @@ router.get('/', auth, async (req, res) => {
       FROM batch_assessment a
       LEFT JOIN batches  b ON a.batch_id   = b.id
       LEFT JOIN students s ON a.student_id = s.id
-      WHERE a.trainer_id = $1
+      WHERE 1=1
     `;
-    const params = [req.user.trainerId];
-    let i = 2;
+    const params = []; let i = 1;
     if (batch_id)   { query += ` AND a.batch_id = $${i++}`;   params.push(batch_id); }
     if (student_id) { query += ` AND a.student_id = $${i++}`; params.push(student_id); }
     query += ` ORDER BY a.assessment_date DESC`;
@@ -27,26 +28,24 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
-// GET /api/assessments/all — admin view
+// GET /api/assessments/all — admin view (must be before /:id)
 router.get('/all', auth, async (req, res) => {
   try {
-    const { batch_id, trainer_id } = req.query;
+    const { batch_id } = req.query;
     let query = `
-      SELECT a.*, b.batch_name, t.name as trainer_name, s.candidate_name
+      SELECT a.*, b.batch_name, s.candidate_name
       FROM batch_assessment a
       LEFT JOIN batches  b ON a.batch_id   = b.id
-      LEFT JOIN trainers t ON a.trainer_id = t.id
       LEFT JOIN students s ON a.student_id = s.id
       WHERE 1=1
     `;
     const params = []; let i = 1;
-    if (batch_id)   { query += ` AND a.batch_id = $${i++}`;   params.push(batch_id); }
-    if (trainer_id) { query += ` AND a.trainer_id = $${i++}`; params.push(trainer_id); }
+    if (batch_id) { query += ` AND a.batch_id = $${i++}`; params.push(batch_id); }
     query += ` ORDER BY a.assessment_date DESC`;
     const result = await pool.query(query, params);
     res.json({ assessments: result.rows });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch all assessments' });
+    res.status(500).json({ error: 'Failed to fetch assessments' });
   }
 });
 
@@ -56,38 +55,39 @@ router.post('/', auth, async (req, res) => {
     const {
       batch_id, student_id, assessment_date, topic_covered,
       no_of_questions_asked, feedback_rating, outcome_remarks,
-      session_type, no_of_participants, session_hours, wa_sent
+      session_type, no_of_participants, session_hours
     } = req.body;
 
     if (!batch_id || !topic_covered)
       return res.status(400).json({ error: 'Batch and topic are required' });
 
+    const validST     = ['regular', 'crash', 'recorded'];
+    const validRating = ['excellent', 'good', 'average', 'needs_improvement'];
+
     const result = await pool.query(
       `INSERT INTO batch_assessment
-        (batch_id, student_id, trainer_id, assessment_date, topic_covered,
+        (batch_id, student_id, assessment_date, topic_covered,
          no_of_questions_asked, feedback_rating, outcome_remarks,
-         session_type, no_of_participants, session_hours, wa_sent)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+         session_type, no_of_participants, session_hours)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
        RETURNING *`,
       [
         batch_id,
-        student_id        || null,
-        req.user.trainerId,
-        assessment_date   || new Date(),
+        nullIfEmpty(student_id),
+        nullIfEmpty(assessment_date) || new Date(),
         topic_covered,
-        no_of_questions_asked || null,
-        feedback_rating   || 'good',
-        outcome_remarks   || null,
-        session_type      || 'weekday',
-        no_of_participants || null,
-        session_hours     || null,
-        wa_sent           || false
+        nullIfEmpty(no_of_questions_asked),
+        validRating.includes(feedback_rating) ? feedback_rating : 'good',
+        nullIfEmpty(outcome_remarks),
+        validST.includes(session_type) ? session_type : 'regular',
+        nullIfEmpty(no_of_participants),
+        nullIfEmpty(session_hours),
       ]
     );
     res.status(201).json({ message: 'Assessment logged', assessment: result.rows[0] });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to save assessment' });
+    console.error('Assessment save error:', err.message);
+    res.status(500).json({ error: 'Failed to save assessment', detail: err.message });
   }
 });
 
@@ -96,9 +96,11 @@ router.put('/:id', auth, async (req, res) => {
   try {
     const {
       topic_covered, no_of_questions_asked, feedback_rating,
-      outcome_remarks, no_of_participants, session_hours,
-      session_type, wa_sent
+      outcome_remarks, no_of_participants, session_hours, session_type
     } = req.body;
+
+    const validST     = ['regular', 'crash', 'recorded'];
+    const validRating = ['excellent', 'good', 'average', 'needs_improvement'];
 
     const result = await pool.query(
       `UPDATE batch_assessment SET
@@ -109,23 +111,26 @@ router.put('/:id', auth, async (req, res) => {
         no_of_participants    = COALESCE($5, no_of_participants),
         session_hours         = COALESCE($6, session_hours),
         session_type          = COALESCE($7, session_type),
-        wa_sent               = COALESCE($8, wa_sent),
         updated_at            = NOW()
-       WHERE id = $9 AND trainer_id = $10
+       WHERE id = $8
        RETURNING *`,
       [
-        topic_covered, no_of_questions_asked, feedback_rating,
-        outcome_remarks, no_of_participants, session_hours,
-        session_type, wa_sent,
-        req.params.id, req.user.trainerId
+        nullIfEmpty(topic_covered),
+        nullIfEmpty(no_of_questions_asked),
+        feedback_rating && validRating.includes(feedback_rating) ? feedback_rating : null,
+        nullIfEmpty(outcome_remarks),
+        nullIfEmpty(no_of_participants),
+        nullIfEmpty(session_hours),
+        session_type && validST.includes(session_type) ? session_type : null,
+        req.params.id
       ]
     );
     if (result.rows.length === 0)
-      return res.status(404).json({ error: 'Record not found' });
+      return res.status(404).json({ error: 'Assessment not found' });
     res.json({ message: 'Assessment updated', assessment: result.rows[0] });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to update assessment' });
+    console.error('Assessment update error:', err.message);
+    res.status(500).json({ error: 'Failed to update assessment', detail: err.message });
   }
 });
 
@@ -133,11 +138,10 @@ router.put('/:id', auth, async (req, res) => {
 router.delete('/:id', auth, async (req, res) => {
   try {
     const result = await pool.query(
-      `DELETE FROM batch_assessment WHERE id = $1 AND trainer_id = $2 RETURNING id`,
-      [req.params.id, req.user.trainerId]
+      `DELETE FROM batch_assessment WHERE id = $1 RETURNING id`, [req.params.id]
     );
     if (result.rows.length === 0)
-      return res.status(404).json({ error: 'Record not found' });
+      return res.status(404).json({ error: 'Assessment not found' });
     res.json({ message: 'Assessment deleted' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete assessment' });
