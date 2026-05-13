@@ -1,73 +1,114 @@
 const express = require('express');
-const router  = express.Router();
-const pool    = require('../db');
+const router = express.Router();
+const pool = require('../db');
 const authMiddleware = require('../middleware/auth');
 
-// ─── OFFICE IP CONFIG ─────────────────────────────────────
-const OFFICE_IP  = process.env.OFFICE_WIFI_IP || '49.206.9.252';
-const allowedIPs = OFFICE_IP.split(',').map(ip => ip.trim());
+const OFFICE_IP_PREFIXES = (
+  process.env.OFFICE_WIFI_IP_PREFIX || '49.206.'
+)
+  .split(',')
+  .map((ip) => ip.trim())
+  .filter(Boolean);
 
 function getClientIP(req) {
   const forwarded = req.headers['x-forwarded-for'];
   let ip = forwarded
     ? forwarded.split(',')[0].trim()
     : req.socket.remoteAddress;
-  // Strip IPv6 prefix e.g. ::ffff:49.206.9.252 → 49.206.9.252
-  ip = ip.replace(/^::ffff:/, '');
+
+  if (typeof ip === 'string') {
+    ip = ip.replace(/^::ffff:/, '');
+  }
+
   return ip;
 }
 
-function checkOfficeWifi(req, res, clientIP) {
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('Client IP  :', clientIP);
-  console.log('Allowed IPs:', allowedIPs);
-  console.log('Match      :', allowedIPs.includes(clientIP));
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+function isOfficeWifi(clientIP) {
+  if (!clientIP || typeof clientIP !== 'string') return false;
+  return OFFICE_IP_PREFIXES.some((prefix) => clientIP.startsWith(prefix));
+}
 
-  if (!allowedIPs.includes(clientIP)) {
+function getTrainerIdFromToken(req, res) {
+  const trainerId = req.user?.trainer_id;
+
+  if (!trainerId) {
     res.status(403).json({
       success: false,
-      message: `Not on office WiFi. Your IP: ${clientIP}. Expected: ${allowedIPs.join(', ')}`
+      message: 'Trainer account not found in token.',
+    });
+    return null;
+  }
+
+  return trainerId;
+}
+
+function checkOfficeWifi(req, res, clientIP) {
+  const matched = isOfficeWifi(clientIP);
+
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('Client IP        :', clientIP);
+  console.log('Allowed prefixes :', OFFICE_IP_PREFIXES);
+  console.log('Prefix match     :', matched);
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+  if (!matched) {
+    res.status(403).json({
+      success: false,
+      message: `Not on office WiFi. Your IP: ${clientIP}. Expected prefix: ${OFFICE_IP_PREFIXES.join(', ')}`,
     });
     return false;
   }
+
   return true;
+}
+
+function getISTDateString() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
 }
 
 // ─── TEST ROUTE (no auth) ─────────────────────────────────
 // GET /api/attendance/my-ip
 router.get('/my-ip', (req, res) => {
   const ip = getClientIP(req);
+
   res.json({
-    detected_ip:    ip,
-    allowed_ips:    allowedIPs,
-    is_office_wifi: allowedIPs.includes(ip),
-    raw_forwarded:  req.headers['x-forwarded-for'] || 'none',
-    raw_socket:     req.socket.remoteAddress
+    detected_ip: ip,
+    allowed_prefixes: OFFICE_IP_PREFIXES,
+    is_office_wifi: isOfficeWifi(ip),
+    raw_forwarded: req.headers['x-forwarded-for'] || 'none',
+    raw_socket: req.socket.remoteAddress,
   });
 });
 
-// ─── CHECK-IN ────────────────────────────────────────────
+// ─── CHECK-IN ─────────────────────────────────────────────
 // POST /api/attendance/checkin
 router.post('/checkin', authMiddleware, async (req, res) => {
-  // Use IP sent from frontend (more reliable since backend is on localhost)
-  const clientIP = req.body.clientIP || getClientIP(req);
+  const trainerId = getTrainerIdFromToken(req, res);
+  if (!trainerId) return;
 
+  const clientIP = req.body.clientIP || getClientIP(req);
   if (!checkOfficeWifi(req, res, clientIP)) return;
 
-  const trainerId = req.user.id;
-  const today     = new Date().toISOString().split('T')[0];
+  const today = getISTDateString();
 
   try {
     const existing = await pool.query(
-      'SELECT * FROM attendance WHERE trainer_id = $1 AND date = $2',
+      `SELECT id, trainer_id, date, check_in, check_out, status
+       FROM attendance
+       WHERE trainer_id = $1 AND date = $2
+       LIMIT 1`,
       [trainerId, today]
     );
 
     if (existing.rows.length > 0) {
       return res.status(400).json({
         success: false,
-        message: 'Already checked in today.'
+        message: 'Already checked in today.',
       });
     }
 
@@ -85,21 +126,24 @@ router.post('/checkin', authMiddleware, async (req, res) => {
   }
 });
 
-// ─── CHECK-OUT ───────────────────────────────────────────
+// ─── CHECK-OUT ────────────────────────────────────────────
 // POST /api/attendance/checkout
 router.post('/checkout', authMiddleware, async (req, res) => {
-  const clientIP = req.body.clientIP || getClientIP(req);
+  const trainerId = getTrainerIdFromToken(req, res);
+  if (!trainerId) return;
 
+  const clientIP = req.body.clientIP || getClientIP(req);
   if (!checkOfficeWifi(req, res, clientIP)) return;
 
-  const trainerId = req.user.id;
-  const today     = new Date().toISOString().split('T')[0];
+  const today = getISTDateString();
 
   try {
     const result = await pool.query(
       `UPDATE attendance
        SET check_out = NOW()
-       WHERE trainer_id = $1 AND date = $2 AND check_out IS NULL
+       WHERE trainer_id = $1
+         AND date = $2
+         AND check_out IS NULL
        RETURNING *`,
       [trainerId, today]
     );
@@ -107,7 +151,7 @@ router.post('/checkout', authMiddleware, async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'No active check-in found for today.'
+        message: 'No active check-in found for today.',
       });
     }
 
@@ -121,14 +165,21 @@ router.post('/checkout', authMiddleware, async (req, res) => {
 // ─── TODAY STATUS ─────────────────────────────────────────
 // GET /api/attendance/today-status
 router.get('/today-status', authMiddleware, async (req, res) => {
-  const trainerId = req.user.id;
-  const today     = new Date().toISOString().split('T')[0];
+  const trainerId = getTrainerIdFromToken(req, res);
+  if (!trainerId) return;
+
+  const today = getISTDateString();
 
   try {
     const result = await pool.query(
-      'SELECT * FROM attendance WHERE trainer_id = $1 AND date = $2',
+      `SELECT *
+       FROM attendance
+       WHERE trainer_id = $1 AND date = $2
+       ORDER BY check_in DESC
+       LIMIT 1`,
       [trainerId, today]
     );
+
     res.json({ success: true, data: result.rows[0] || null });
   } catch (err) {
     console.error('Today status error:', err.message);
@@ -139,18 +190,28 @@ router.get('/today-status', authMiddleware, async (req, res) => {
 // ─── MY RECORDS (THIS MONTH) ──────────────────────────────
 // GET /api/attendance/my
 router.get('/my', authMiddleware, async (req, res) => {
-  const trainerId       = req.user.id;
+  const trainerId = getTrainerIdFromToken(req, res);
+  if (!trainerId) return;
+
   const { month, year } = req.query;
 
   try {
     const result = await pool.query(
-      `SELECT * FROM attendance
+      `SELECT *
+       FROM attendance
        WHERE trainer_id = $1
-         AND EXTRACT(MONTH FROM date) = COALESCE($2::int, EXTRACT(MONTH FROM NOW()))
-         AND EXTRACT(YEAR  FROM date) = COALESCE($3::int, EXTRACT(YEAR  FROM NOW()))
-       ORDER BY date DESC`,
+         AND EXTRACT(MONTH FROM date) = COALESCE(
+           $2::int,
+           EXTRACT(MONTH FROM (NOW() AT TIME ZONE 'Asia/Kolkata'))
+         )
+         AND EXTRACT(YEAR FROM date) = COALESCE(
+           $3::int,
+           EXTRACT(YEAR FROM (NOW() AT TIME ZONE 'Asia/Kolkata'))
+         )
+       ORDER BY date DESC, check_in DESC`,
       [trainerId, month || null, year || null]
     );
+
     res.json({ success: true, data: result.rows });
   } catch (err) {
     console.error('My records error:', err.message);
@@ -161,14 +222,18 @@ router.get('/my', authMiddleware, async (req, res) => {
 // ─── ESCALATIONS AGAINST ME ───────────────────────────────
 // GET /api/attendance/escalations/against-me
 router.get('/escalations/against-me', authMiddleware, async (req, res) => {
+  const trainerId = getTrainerIdFromToken(req, res);
+  if (!trainerId) return;
+
   try {
     const result = await pool.query(
       `SELECT *
        FROM escalations
        WHERE trainer_id = $1
        ORDER BY created_at DESC`,
-      [req.user.id]
+      [trainerId]
     );
+
     res.json({ success: true, data: result.rows });
   } catch (err) {
     console.error('Escalations error:', err.message);

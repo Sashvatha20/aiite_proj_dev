@@ -1,2 +1,50 @@
-node_modules
+# dependencies
+node_modules/
+
+# environment files
 .env
+.env.*
+!.env.example
+
+# logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# build output
+dist/
+build/
+.next/
+out/
+coverage/
+
+# caches
+.cache/
+.parcel-cache/
+.vite/
+.eslintcache
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# temp
+tmp/
+temp/
+
+# misc
+*.tgz
+.node_repl_history
+
+service-account.json

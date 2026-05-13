@@ -1,35 +1,49 @@
-const jwt  = require('jsonwebtoken');
+const jwt = require('jsonwebtoken');
 const pool = require('../db');
 require('dotenv').config();
 
-module.exports = async (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (!token) {
-    return res.status(401).json({ error: 'Access denied. No token provided.' });
-  }
-
+module.exports = async function auth(req, res, next) {
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded;
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ')
+      ? authHeader.split(' ')[1]
+      : null;
 
-    // ✅ FIX: Token uses 'trainerId' (camelCase), normalize to trainer_id
-    if (!req.user.trainer_id) {
-      req.user.trainer_id = req.user.trainerId || null;
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'Access denied. No token provided.',
+      });
     }
 
-    // If still null, try fetching from DB (safety fallback)
-    if (!req.user.trainer_id && req.user.role === 'trainer') {
-      const result = await pool.query(
-        'SELECT id FROM trainers WHERE user_id = $1',
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    req.user = {
+      id: decoded.id,
+      username: decoded.username || null,
+      role: decoded.role || null,
+      name: decoded.name || decoded.username || 'You',
+    };
+
+    if (req.user.role === 'trainer') {
+      const trainerRes = await pool.query(
+        `SELECT id, name, user_id
+         FROM trainers
+         WHERE user_id = $1
+         LIMIT 1`,
         [req.user.id]
       );
-      req.user.trainer_id = result.rows[0]?.id || null;
+
+      req.user.trainer_id = trainerRes.rows[0]?.id || null;
+      req.user.trainer_name = trainerRes.rows[0]?.name || null;
     }
 
-    next();
+    return next();
   } catch (err) {
-    return res.status(403).json({ error: 'Invalid or expired token.' });
+    console.error('Auth middleware error:', err.message);
+    return res.status(403).json({
+      success: false,
+      message: 'Invalid or expired token.',
+    });
   }
 };

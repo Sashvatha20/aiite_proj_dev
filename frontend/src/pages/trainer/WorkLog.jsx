@@ -1,118 +1,443 @@
-import { useState, useEffect } from 'react';
-import { submitLog, getMyLogs, updateLog } from '../../api/worklog';
+import { useEffect, useMemo, useState } from 'react';
+import { submitLog, getMyLogs, updateLog, getLogStats } from '../../api/worklog';
 import { getBatches } from '../../api/batches';
+import { syncWorkLogSheet } from '../../api/sheetsSync';
+import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 
-const S = {
-  card:    { background:'#fff', borderRadius:12, padding:20, marginBottom:16 },
-  title:   { fontSize:15, fontWeight:600, marginBottom:14, paddingBottom:10, borderBottom:'1px solid #f0f0f0', display:'flex', justifyContent:'space-between', alignItems:'center' },
-  tag:     { fontSize:9, background:'#E6F1FB', color:'#185FA5', padding:'2px 6px', borderRadius:4 },
-  tabs:    { display:'flex', borderBottom:'1px solid #eee', marginBottom:14 },
-  tab:     { padding:'7px 14px', fontSize:12, cursor:'pointer', borderBottom:'2px solid transparent', color:'#888' },
-  tabA:    { borderBottomColor:'#1D9E75', color:'#1D9E75', fontWeight:500 },
-  row2:    { display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10 },
-  row3:    { display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10, marginBottom:10 },
-  field:   { marginBottom:10 },
-  label:   { fontSize:11, color:'#666', display:'block', marginBottom:3 },
-  input:   { width:'100%', padding:'7px 10px', border:'1px solid #ddd', borderRadius:8, fontSize:12, outline:'none', boxSizing:'border-box' },
-  textarea:{ width:'100%', padding:'7px 10px', border:'1px solid #ddd', borderRadius:8, fontSize:12, outline:'none', resize:'vertical', minHeight:80, boxSizing:'border-box', fontFamily:'inherit' },
-  select:  { width:'100%', padding:'7px 10px', border:'1px solid #ddd', borderRadius:8, fontSize:12, outline:'none', background:'#fff', boxSizing:'border-box' },
-  readonly:{ width:'100%', padding:'7px 10px', border:'1px solid #ddd', borderRadius:8, fontSize:12, background:'#f8f8f8', color:'#888', boxSizing:'border-box' },
-  btnRow:  { display:'flex', gap:8, marginTop:12 },
-  btn:     { padding:'8px 16px', borderRadius:8, border:'1px solid #ddd', background:'#fff', fontSize:12, cursor:'pointer' },
-  btnP:    { padding:'8px 16px', borderRadius:8, border:'none', background:'#1D9E75', color:'#fff', fontSize:12, cursor:'pointer' },
-  wa:      { background:'#E1F5EE', border:'1px solid #9FE1CB', borderRadius:8, padding:'10px 12px', fontSize:11, color:'#0F6E56', marginTop:8 },
-  divider: { border:'none', borderTop:'1px solid #f0f0f0', margin:'12px 0' },
-  table:   { width:'100%', borderCollapse:'collapse', fontSize:12 },
-  th:      { textAlign:'left', padding:'8px 10px', borderBottom:'1px solid #eee', fontSize:11, color:'#888', fontWeight:500 },
-  td:      { padding:'8px 10px', borderBottom:'1px solid #f5f5f5', color:'#333' },
-  badge:   (c) => ({ fontSize:10, padding:'2px 8px', borderRadius:10, background: c==='green'?'#E1F5EE': c==='red'?'#FCEBEB':'#f0f0f0', color: c==='green'?'#0F6E56': c==='red'?'#A32D2D':'#666' }),
-  actBtn:  { fontSize:10, padding:'3px 8px', borderRadius:6, border:'1px solid #ddd', background:'#fff', cursor:'pointer', marginRight:4 },
+const BRAND = '#1D9E75';
+
+const styles = {
+  page: { display: 'grid', gap: 16 },
+  card: {
+    background: '#fff',
+    borderRadius: 18,
+    border: '1px solid #e8edf2',
+    boxShadow: '0 8px 24px rgba(15, 23, 42, 0.04)',
+  },
+  section: { padding: 18 },
+  header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+    flexWrap: 'wrap',
+    marginBottom: 14,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: 800,
+    color: '#0f172a',
+    marginBottom: 4,
+  },
+  sub: {
+    fontSize: 12,
+    color: '#64748b',
+  },
+  pill: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '6px 10px',
+    borderRadius: 999,
+    background: '#E8F2FF',
+    color: '#185FA5',
+    fontSize: 11,
+    fontWeight: 700,
+    whiteSpace: 'nowrap',
+  },
+  tabs: {
+    display: 'flex',
+    gap: 8,
+    flexWrap: 'wrap',
+    marginBottom: 14,
+    borderBottom: '1px solid #e8edf2',
+    paddingBottom: 2,
+  },
+  tab: {
+    padding: '9px 14px',
+    borderRadius: 999,
+    border: '1px solid #dbe4ea',
+    background: '#fff',
+    color: '#475569',
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
+  tabActive: {
+    background: BRAND,
+    color: '#fff',
+    borderColor: BRAND,
+  },
+  grid2: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: 12,
+  },
+  field: { display: 'grid', gap: 5 },
+  label: {
+    fontSize: 11,
+    fontWeight: 700,
+    color: '#475569',
+  },
+  input: {
+    width: '100%',
+    padding: '10px 12px',
+    border: '1px solid #d8e1e8',
+    borderRadius: 10,
+    fontSize: 13,
+    outline: 'none',
+    boxSizing: 'border-box',
+    background: '#fff',
+  },
+  textarea: {
+    width: '100%',
+    padding: '10px 12px',
+    border: '1px solid #d8e1e8',
+    borderRadius: 10,
+    fontSize: 13,
+    outline: 'none',
+    resize: 'vertical',
+    minHeight: 110,
+    boxSizing: 'border-box',
+    fontFamily: 'inherit',
+    background: '#fff',
+  },
+  select: {
+    width: '100%',
+    padding: '10px 12px',
+    border: '1px solid #d8e1e8',
+    borderRadius: 10,
+    fontSize: 13,
+    outline: 'none',
+    background: '#fff',
+    boxSizing: 'border-box',
+  },
+  readonly: {
+    width: '100%',
+    padding: '10px 12px',
+    border: '1px solid #d8e1e8',
+    borderRadius: 10,
+    fontSize: 13,
+    background: '#f8fafc',
+    color: '#64748b',
+    boxSizing: 'border-box',
+  },
+  infoBox: {
+    background: '#fff8e8',
+    border: '1px solid #f5d48c',
+    borderRadius: 12,
+    padding: '12px 14px',
+    fontSize: 12,
+    color: '#854f0b',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+    flexWrap: 'wrap',
+    marginBottom: 12,
+  },
+  summaryStrip: {
+    background: '#f0faf6',
+    border: '1px solid #d9efe6',
+    borderRadius: 14,
+    padding: 14,
+    display: 'grid',
+    gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+    gap: 12,
+    marginBottom: 14,
+  },
+  summaryItem: { minWidth: 0 },
+  summaryLabel: {
+    fontSize: 10,
+    fontWeight: 700,
+    color: '#64748b',
+    marginBottom: 4,
+    textTransform: 'uppercase',
+    letterSpacing: '0.03em',
+  },
+  summaryValue: {
+    fontSize: 13,
+    fontWeight: 700,
+    color: '#0f172a',
+    lineHeight: 1.35,
+    wordBreak: 'break-word',
+  },
+  formBox: {
+    border: '1px solid #e8edf2',
+    background: '#fbfefd',
+    borderRadius: 16,
+    padding: 16,
+    display: 'grid',
+    gap: 14,
+  },
+  btnRow: {
+    display: 'flex',
+    gap: 8,
+    flexWrap: 'wrap',
+    marginTop: 4,
+  },
+  btnPrimary: {
+    padding: '10px 16px',
+    borderRadius: 10,
+    border: 'none',
+    background: BRAND,
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
+  btnSecondary: {
+    padding: '10px 16px',
+    borderRadius: 10,
+    border: '1px solid #d8e1e8',
+    background: '#fff',
+    color: '#334155',
+    fontSize: 13,
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
+  waBox: {
+    background: '#e8f8f1',
+    border: '1px solid #bde8d6',
+    borderRadius: 14,
+    padding: 14,
+    fontSize: 12,
+    color: '#0f6e56',
+  },
+  waTitle: {
+    fontWeight: 800,
+    marginBottom: 8,
+    color: '#0f6e56',
+  },
+  historyWrap: {
+    border: '1px solid #e8edf2',
+    borderRadius: 16,
+    overflow: 'hidden',
+    background: '#fff',
+  },
+  tableWrap: { overflowX: 'auto' },
+  table: {
+    width: '100%',
+    borderCollapse: 'separate',
+    borderSpacing: 0,
+    fontSize: 13,
+  },
+  th: {
+    textAlign: 'left',
+    padding: '12px 12px',
+    fontSize: 11,
+    fontWeight: 700,
+    color: '#64748b',
+    borderBottom: '1px solid #e8edf2',
+    background: '#fafcfd',
+    whiteSpace: 'nowrap',
+  },
+  td: {
+    padding: '14px 12px',
+    borderBottom: '1px solid #f1f5f9',
+    verticalAlign: 'middle',
+    color: '#0f172a',
+  },
+  nameMain: {
+    fontSize: 13,
+    fontWeight: 700,
+    color: '#0f172a',
+    marginBottom: 2,
+  },
+  nameSub: {
+    fontSize: 11,
+    color: '#64748b',
+  },
+  empty: {
+    textAlign: 'center',
+    padding: '42px 20px',
+    fontSize: 13,
+    color: '#94a3b8',
+  },
+  miniBtn: {
+    padding: '8px 12px',
+    borderRadius: 9,
+    border: '1px solid #d8e1e8',
+    background: '#fff',
+    cursor: 'pointer',
+    fontSize: 12,
+    fontWeight: 700,
+    color: '#334155',
+  },
+  badge: (bg, color) => ({
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '5px 10px',
+    borderRadius: 999,
+    fontSize: 11,
+    fontWeight: 700,
+    background: bg,
+    color,
+    whiteSpace: 'nowrap',
+  }),
+  helper: {
+    fontSize: 11,
+    color: '#64748b',
+  },
 };
 
-export default function WorkLog() {
-  const [tab, setTab]         = useState(0);
-  const [batches, setBatches] = useState([]);
-  const [logs, setLogs]       = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [editId, setEditId]   = useState(null);
+const today = () => new Date().toISOString().split('T')[0];
 
-  const today = new Date().toISOString().split('T')[0];
+export default function WorkLog() {
+  const { user } = useAuth();
+
+  const trainerId =
+    user?.trainerId ??
+    user?.trainer_id ??
+    user?.trainer?.id ??
+    user?.trainer?.trainer_id ??
+    null;
+
+  const [tab, setTab] = useState(0);
+  const [batches, setBatches] = useState([]);
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [syncingSheet, setSyncingSheet] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [stats, setStats] = useState(null);
 
   const [form, setForm] = useState({
-    log_date: today,
+    log_date: today(),
     batch_id: '',
     work_description: '',
     progressive_working_hours: '',
     star_points: '',
-    wa_sent: false
+    wa_sent: false,
   });
 
-  useEffect(() => {
-    getBatches({ status: 'ongoing' }).then(r => setBatches(r.data.batches || []));
-    fetchLogs();
-  }, []);
+  const setField = (k, v) => {
+    const next = { ...form, [k]: v };
 
-  const fetchLogs = async () => {
-    try {
-      const r = await getMyLogs();
-      setLogs(r.data.logs || []);
-    } catch {}
-  };
-
-  const calcStarPoints = (hours) => {
-    const h = parseFloat(hours) || 0;
-    return (h * 0.5).toFixed(2);
-  };
-
-  const set = (k, v) => {
-    const updated = { ...form, [k]: v };
     if (k === 'progressive_working_hours') {
-      updated.star_points = calcStarPoints(v);
+      const hours = parseFloat(v) || 0;
+      next.star_points = (hours * 0.5).toFixed(2);
     }
-    setForm(updated);
+
+    setForm(next);
   };
 
   const clearForm = () => {
     setForm({
-      log_date: today,
+      log_date: today(),
       batch_id: '',
       work_description: '',
       progressive_working_hours: '',
       star_points: '',
-      wa_sent: false
+      wa_sent: false,
     });
     setEditId(null);
   };
 
+  const fetchLogs = async () => {
+    if (!trainerId) return;
+
+    try {
+      const r = await getMyLogs({ trainer_id: trainerId });
+      setLogs(r.data.logs || []);
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Failed to load work logs');
+    }
+  };
+
+  const fetchStats = async () => {
+    if (!trainerId) return;
+
+    try {
+      const r = await getLogStats({ trainer_id: trainerId });
+      setStats(r.data || null);
+    } catch {
+      setStats(null);
+    }
+  };
+
+  useEffect(() => {
+    getBatches({ status: 'ongoing' })
+      .then((r) => setBatches(r.data.batches || []))
+      .catch((err) => toast.error(err?.response?.data?.error || 'Failed to load batches'));
+  }, []);
+
+  useEffect(() => {
+    if (!trainerId) return;
+    fetchLogs();
+    fetchStats();
+  }, [trainerId]);
+
+  const selectedBatch = useMemo(
+    () => batches.find((b) => String(b.id) === String(form.batch_id)),
+    [batches, form.batch_id]
+  );
+
   const buildWAMessage = () =>
-    `Hi bros, today's work status (${form.log_date})\n\n${form.work_description}\n\nWorking hours: ${form.progressive_working_hours}\nStar points: ${form.star_points}`;
+    `Hi bros, today's work status (${form.log_date})\n\n${form.work_description}\n\nWorking hours: ${form.progressive_working_hours || '0'}\nStar points: ${form.star_points || '0.00'}`;
 
   const openWhatsApp = () => {
     const msg = encodeURIComponent(buildWAMessage());
-    window.open(`https://web.whatsapp.com/send?text=${msg}`, '_blank');
-    set('wa_sent', true);
+    window.open(`https://web.whatsapp.com/send?text=${msg}`, '_blank', 'noopener,noreferrer');
+    setField('wa_sent', true);
+  };
+
+  const handleSyncWorkLogSheet = async () => {
+    try {
+      setSyncingSheet(true);
+      const res = await syncWorkLogSheet();
+
+      if (res?.data?.success) {
+        toast.success(res?.data?.message || `Work Log sheet synced (${res?.data?.count || 0} rows)`);
+      } else {
+        toast.error(res?.data?.error || 'Work Log sheet sync failed');
+      }
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Failed to sync work log sheet');
+    } finally {
+      setSyncingSheet(false);
+    }
   };
 
   const handleSubmit = async () => {
-    if (!form.log_date || !form.work_description) {
+    if (!trainerId) {
+      toast.error('Trainer ID not found in session. Please log in again.');
+      return;
+    }
+
+    if (!form.log_date || !form.work_description.trim()) {
       toast.error('Date and work description are required');
       return;
     }
+
     setLoading(true);
+
     try {
+      const payload = {
+        trainer_id: trainerId,
+        batch_id: form.batch_id || null,
+        log_date: form.log_date,
+        work_description: form.work_description.trim(),
+        progressive_working_hours: form.progressive_working_hours || 0,
+        star_points: form.star_points || 0,
+        whatsapp_sent_to: null,
+        wa_sent: form.wa_sent ? 1 : 0,
+      };
+
       if (editId) {
-        await updateLog(editId, form);
+        await updateLog(editId, payload);
         toast.success('Work log updated!');
       } else {
-        await submitLog(form);
+        await submitLog(payload);
         toast.success('Work log submitted!');
       }
+
+      await handleSyncWorkLogSheet();
       clearForm();
-      fetchLogs();
+      await fetchLogs();
+      await fetchStats();
       setTab(1);
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to save');
+      toast.error(err?.response?.data?.error || 'Failed to save');
     } finally {
       setLoading(false);
     }
@@ -120,174 +445,275 @@ export default function WorkLog() {
 
   const handleEdit = (log) => {
     setForm({
-      log_date: log.log_date?.split('T')[0] || today,
+      log_date: log.log_date?.split('T')[0] || today(),
       batch_id: log.batch_id || '',
       work_description: log.work_description || '',
       progressive_working_hours: log.progressive_working_hours || '',
       star_points: log.star_points || '',
-      wa_sent: log.wa_sent || false
+      wa_sent: Boolean(log.wa_sent),
     });
     setEditId(log.id);
     setTab(0);
   };
 
   return (
-    <div>
-      <div style={S.card}>
+    <div style={styles.page}>
+      <div style={styles.card}>
+        <div style={styles.section}>
+          <div style={styles.header}>
+            <div>
+              <div style={styles.title}>Daily work log</div>
+              <div style={styles.sub}>Track daily teaching work, hours, points, and sheet sync in one place.</div>
+            </div>
 
-        <div style={S.title}>
-          Daily work log
-          <span style={S.tag}>→ Employee Performance Tracker</span>
-        </div>
-
-        <div style={S.tabs}>
-          {["Add today's log", "View history"].map((t, i) => (
-            <div
-              key={i}
-              style={{ ...S.tab, ...(tab === i ? S.tabA : {}) }}
-              onClick={() => setTab(i)}
+            <button
+              type="button"
+              style={styles.btnPrimary}
+              onClick={handleSyncWorkLogSheet}
+              disabled={syncingSheet}
             >
-              {t}
+              {syncingSheet ? 'Syncing...' : 'Sync Work Log Sheet'}
+            </button>
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <span style={styles.pill}>→ Employee Performance Tracker</span>
+          </div>
+
+          {!trainerId && (
+            <div style={styles.infoBox}>
+              <span>Trainer ID not available in session. Please log in again.</span>
             </div>
-          ))}
-        </div>
+          )}
 
-        {tab === 0 && (
-          <div>
-
-            {editId && (
-              <div style={{ background:'#FAEEDA', border:'1px solid #FAC775', borderRadius:8, padding:'8px 12px', fontSize:11, color:'#854F0B', marginBottom:10, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                <span>✏️ Editing existing log</span>
-                <button style={S.actBtn} onClick={clearForm}>✕ Cancel edit</button>
+          {stats && (
+            <div style={styles.summaryStrip}>
+              <div style={styles.summaryItem}>
+                <div style={styles.summaryLabel}>Total logs</div>
+                <div style={styles.summaryValue}>{stats.total_logs ?? stats.totalLogs ?? logs.length}</div>
               </div>
-            )}
 
-            <div style={S.row2}>
-              <div style={S.field}>
-                <label style={S.label}>Date</label>
-                <input
-                  style={S.input}
-                  type="date"
-                  value={form.log_date}
-                  onChange={e => set('log_date', e.target.value)}
+              <div style={styles.summaryItem}>
+                <div style={styles.summaryLabel}>This month</div>
+                <div style={styles.summaryValue}>{stats.month_logs ?? stats.monthLogs ?? '—'}</div>
+              </div>
+
+              <div style={styles.summaryItem}>
+                <div style={styles.summaryLabel}>Hours</div>
+                <div style={styles.summaryValue}>{stats.total_hours ?? stats.totalHours ?? '—'}</div>
+              </div>
+
+              <div style={styles.summaryItem}>
+                <div style={styles.summaryLabel}>Star points</div>
+                <div style={styles.summaryValue}>{stats.total_points ?? stats.totalPoints ?? '—'}</div>
+              </div>
+            </div>
+          )}
+
+          <div style={styles.tabs}>
+            {["Add today's log", 'View history'].map((t, i) => (
+              <button
+                key={t}
+                type="button"
+                style={{ ...styles.tab, ...(tab === i ? styles.tabActive : {}) }}
+                onClick={() => setTab(i)}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+
+          {tab === 0 && (
+            <div style={styles.formBox}>
+              {editId && (
+                <div style={styles.infoBox}>
+                  <span>✏️ Editing existing log</span>
+                  <button type="button" style={styles.miniBtn} onClick={clearForm}>
+                    Cancel edit
+                  </button>
+                </div>
+              )}
+
+              <div style={styles.grid2}>
+                <div style={styles.field}>
+                  <label style={styles.label}>Date</label>
+                  <input
+                    style={styles.input}
+                    type="date"
+                    value={form.log_date}
+                    onChange={(e) => setField('log_date', e.target.value)}
+                  />
+                </div>
+
+                <div style={styles.field}>
+                  <label style={styles.label}>Batch (optional)</label>
+                  <select
+                    style={styles.select}
+                    value={form.batch_id}
+                    onChange={(e) => setField('batch_id', e.target.value)}
+                  >
+                    <option value="">Select batch</option>
+                    {batches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.batch_name || b.batchname}
+                        {b.course_name || b.coursename ? ` — ${b.course_name || b.coursename}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div style={styles.field}>
+                <label style={styles.label}>Work description (what you did today)</label>
+                <textarea
+                  style={styles.textarea}
+                  placeholder={`10:00 AM - 11:00 AM  Java Batch 2 - OOP concepts
+11:00 AM - 12:00 PM  Selenium Batch 1 - Waits`}
+                  value={form.work_description}
+                  onChange={(e) => setField('work_description', e.target.value)}
                 />
               </div>
-              <div style={S.field}>
-                <label style={S.label}>Batch (optional)</label>
-                <select
-                  style={S.select}
-                  value={form.batch_id}
-                  onChange={e => set('batch_id', e.target.value)}
-                >
-                  <option value="">Select batch</option>
-                  {batches.map(b => (
-                    <option key={b.id} value={b.id}>{b.batch_name}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
 
-            <div style={S.field}>
-              <label style={S.label}>Work description (what you did today)</label>
-              <textarea
-                style={S.textarea}
-                placeholder={"10:00 AM – 11:00 AM  Java Batch 2 – OOP concepts\n11:00 AM – 12:00 PM  Selenium Batch 1 – Waits..."}
-                value={form.work_description}
-                onChange={e => set('work_description', e.target.value)}
-              />
-            </div>
+              <div style={styles.grid2}>
+                <div style={styles.field}>
+                  <label style={styles.label}>Working hours</label>
+                  <input
+                    style={styles.input}
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    placeholder="e.g. 6.5"
+                    value={form.progressive_working_hours}
+                    onChange={(e) => setField('progressive_working_hours', e.target.value)}
+                  />
+                </div>
 
-            <div style={S.row2}>
-              <div style={S.field}>
-                <label style={S.label}>Working hours</label>
-                <input
-                  style={S.input}
-                  type="number"
-                  step="0.5"
-                  placeholder="e.g. 6.5"
-                  value={form.progressive_working_hours}
-                  onChange={e => set('progressive_working_hours', e.target.value)}
-                />
+                <div style={styles.field}>
+                  <label style={styles.label}>Star points (auto-calculated)</label>
+                  <input style={styles.readonly} readOnly value={form.star_points || '0.00'} />
+                </div>
               </div>
-              <div style={S.field}>
-                <label style={S.label}>Star points (auto-calculated)</label>
-                <input style={S.readonly} readOnly value={form.star_points || '0.00'} />
-              </div>
-            </div>
 
-            {form.work_description && (
-              <div style={S.wa}>
-                <div style={{ fontWeight:500, marginBottom:6 }}>WhatsApp message preview:</div>
-                <div style={{ whiteSpace:'pre-wrap', lineHeight:1.7 }}>{buildWAMessage()}</div>
+              {selectedBatch && (
+                <div style={styles.helper}>
+                  Selected batch: {selectedBatch.batch_name || selectedBatch.batchname}
+                </div>
+              )}
+
+              {form.work_description && (
+                <div style={styles.waBox}>
+                  <div style={styles.waTitle}>WhatsApp message preview</div>
+                  <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{buildWAMessage()}</div>
+
+                  <button
+                    type="button"
+                    style={{
+                      marginTop: 10,
+                      padding: '7px 16px',
+                      background: '#25D366',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: 8,
+                      fontSize: 12,
+                      cursor: 'pointer',
+                    }}
+                    onClick={openWhatsApp}
+                  >
+                    Open WhatsApp Web
+                  </button>
+                </div>
+              )}
+
+              <div style={styles.btnRow}>
                 <button
                   type="button"
-                  style={{ marginTop:10, padding:'7px 16px', background:'#25D366', color:'#fff', border:'none', borderRadius:8, fontSize:12, cursor:'pointer' }}
-                  onClick={openWhatsApp}
+                  style={styles.btnPrimary}
+                  onClick={handleSubmit}
+                  disabled={loading}
                 >
-                  Open WhatsApp Web → select contact manually
+                  {loading ? 'Saving...' : editId ? 'Update log' : 'Submit log'}
+                </button>
+
+                <button type="button" style={styles.btnSecondary} onClick={clearForm}>
+                  Clear
                 </button>
               </div>
-            )}
-
-            <div style={S.btnRow}>
-              <button style={S.btnP} onClick={handleSubmit} disabled={loading}>
-                {loading ? 'Saving...' : editId ? 'Update log' : 'Submit log + Sync to Sheets'}
-              </button>
-              <button style={S.btn} onClick={clearForm}>
-                Clear
-              </button>
             </div>
+          )}
 
-          </div>
-        )}
+          {tab === 1 && (
+            <div style={styles.historyWrap}>
+              <div style={styles.tableWrap}>
+                <table style={styles.table}>
+                  <thead>
+                    <tr>
+                      <th style={styles.th}>Date</th>
+                      <th style={styles.th}>Batch</th>
+                      <th style={styles.th}>Description</th>
+                      <th style={styles.th}>Hours</th>
+                      <th style={styles.th}>Star pts</th>
+                      <th style={styles.th}>WA sent</th>
+                      <th style={styles.th}>Actions</th>
+                    </tr>
+                  </thead>
 
-        {tab === 1 && (
-          <div>
-            <table style={S.table}>
-              <thead>
-                <tr>
-                  <th style={S.th}>Date</th>
-                  <th style={S.th}>Batch</th>
-                  <th style={S.th}>Description</th>
-                  <th style={S.th}>Hours</th>
-                  <th style={S.th}>Star pts</th>
-                  <th style={S.th}>WA sent</th>
-                  <th style={S.th}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {logs.length === 0 && (
-                  <tr>
-                    <td colSpan={7} style={{ ...S.td, textAlign:'center', color:'#aaa', padding:24 }}>
-                      No logs yet. Submit your first work log!
-                    </td>
-                  </tr>
-                )}
-                {logs.map(log => (
-                  <tr key={log.id}>
-                    <td style={S.td}>{log.log_date?.split('T')[0]}</td>
-                    <td style={S.td}>{log.batch_name || '—'}</td>
-                    <td style={S.td} title={log.work_description}>
-                      {log.work_description?.slice(0, 40)}
-                      {log.work_description?.length > 40 ? '...' : ''}
-                    </td>
-                    <td style={S.td}>{log.progressive_working_hours}h</td>
-                    <td style={S.td}>{log.star_points}</td>
-                    <td style={S.td}>
-                      <span style={S.badge(log.wa_sent ? 'green' : 'red')}>
-                        {log.wa_sent ? 'Sent' : 'Not sent'}
-                      </span>
-                    </td>
-                    <td style={S.td}>
-                      <button style={S.actBtn} onClick={() => handleEdit(log)}>Edit</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                  <tbody>
+                    {logs.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} style={styles.empty}>
+                          No logs yet. Submit your first work log!
+                        </td>
+                      </tr>
+                    ) : (
+                      logs.map((log) => (
+                        <tr key={log.id}>
+                          <td style={styles.td}>{log.log_date?.split('T')[0] || '—'}</td>
 
+                          <td style={styles.td}>{log.batch_name || log.batchname || '—'}</td>
+
+                          <td style={styles.td} title={log.work_description || ''}>
+                            <div style={styles.nameMain}>
+                              {(log.work_description || '—').slice(0, 42)}
+                              {(log.work_description || '').length > 42 ? '...' : ''}
+                            </div>
+                            <div style={styles.nameSub}>Tap edit to revise the full entry</div>
+                          </td>
+
+                          <td style={styles.td}>
+                            {log.progressive_working_hours ? `${log.progressive_working_hours}h` : '—'}
+                          </td>
+
+                          <td style={styles.td}>{log.star_points ?? '0.00'}</td>
+
+                          <td style={styles.td}>
+                            <span
+                              style={styles.badge(
+                                log.wa_sent ? '#E1F5EE' : '#FCEBEB',
+                                log.wa_sent ? '#0F6E56' : '#A32D2D'
+                              )}
+                            >
+                              {log.wa_sent ? 'Sent' : 'Not sent'}
+                            </span>
+                          </td>
+
+                          <td style={styles.td}>
+                            <button
+                              type="button"
+                              style={styles.miniBtn}
+                              onClick={() => handleEdit(log)}
+                            >
+                              Edit
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

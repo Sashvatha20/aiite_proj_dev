@@ -3,6 +3,12 @@ import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
+import {
+  LayoutDashboard, UserSquare2, BookOpen, GraduationCap,
+  FileText, Briefcase, ShieldAlert, PhoneCall, ClipboardList,
+  LogOut, User, Menu, ChevronLeft,
+} from 'lucide-react';
+
 import AdminDashboard   from './AdminDashboard';
 import AdminTrainers    from './AdminTrainers';
 import AdminBatches     from './AdminBatches';
@@ -13,30 +19,32 @@ import AdminEscalations from './AdminEscalations';
 import AdminFollowups   from './AdminFollowups';
 import AdminEnquiries   from './AdminEnquiries';
 
-const G = '#1D9E75';
+const G      = '#1D9E75';
+const G_SOFT = '#E8F7F1';
+
 const MENU = [
-  { key:'dashboard',   label:'Dashboard',    icon:'📊' },
-  { key:'trainers',    label:'Trainers',      icon:'👨‍🏫' },
-  { key:'batches',     label:'Batches',       icon:'📚' },
-  { key:'students',    label:'Students',      icon:'🎓' },
-  { key:'worklog',     label:'Work Logs',     icon:'📝' },
-  { key:'placements',  label:'Placements',    icon:'🎯' },
-  { key:'escalations', label:'Escalations',   icon:'⚠️' },
-  { key:'followups',   label:'Followups',     icon:'📞' },
-  { key:'enquiries',   label:'Enquiries',     icon:'📋' },
+  { key: 'dashboard',   label: 'Dashboard',   icon: LayoutDashboard },
+  { key: 'trainers',    label: 'Trainers',     icon: UserSquare2 },
+  { key: 'batches',     label: 'Batches',      icon: BookOpen },
+  { key: 'students',    label: 'Students',     icon: GraduationCap },
+  { key: 'worklog',     label: 'Work Logs',    icon: FileText },
+  { key: 'placements',  label: 'Placements',   icon: Briefcase },
+  { key: 'escalations', label: 'Escalations',  icon: ShieldAlert },
+  { key: 'followups',   label: 'Followups',    icon: PhoneCall },
+  { key: 'enquiries',   label: 'Enquiries',    icon: ClipboardList },
 ];
 
 export default function AdminLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [active, setActive] = useState('dashboard');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [active, setActive]       = useState('dashboard');
+  const [collapsed, setCollapsed] = useState(false);
 
   const handleLogout = () => { logout(); toast.success('Logged out'); navigate('/'); };
 
   const renderPage = () => {
-    switch(active) {
-      case 'dashboard':   return <AdminDashboard />;
+    switch (active) {
+      case 'dashboard':   return <AdminDashboard onNavigate={setActive} />;
       case 'trainers':    return <AdminTrainers />;
       case 'batches':     return <AdminBatches />;
       case 'students':    return <AdminStudents />;
@@ -45,79 +53,186 @@ export default function AdminLayout() {
       case 'escalations': return <AdminEscalations />;
       case 'followups':   return <AdminFollowups />;
       case 'enquiries':   return <AdminEnquiries />;
-      default:            return <AdminDashboard />;
+      default:            return <AdminDashboard onNavigate={setActive} />;
     }
   };
 
+  const SW = collapsed ? 60 : 220;
+
   return (
-    <div style={{minHeight:'100vh',display:'flex',background:'#f5f5f3'}}>
-      {/* Sidebar */}
-      <div style={{
-        width: sidebarOpen ? 210 : 56, transition:'width .2s',
-        background:'#fff', borderRight:'1px solid #eee',
-        display:'flex', flexDirection:'column', flexShrink:0,
-        position:'sticky', top:0, height:'100vh', overflow:'hidden'
+    <div style={{
+      display: 'flex',
+      width: '100vw',
+      height: '100vh',
+      overflow: 'hidden',
+      background: '#F6F8FB',
+    }}>
+
+      {/* ── Sidebar ───────────────────────────────────────── */}
+      <aside style={{
+        width: SW,
+        minWidth: SW,
+        maxWidth: SW,
+        height: '100vh',
+        background: '#fff',
+        borderRight: '1px solid #E5E7EB',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        flexShrink: 0,
+        transition: 'width 0.22s cubic-bezier(0.16,1,0.3,1), min-width 0.22s, max-width 0.22s',
+        zIndex: 20,
       }}>
+
         {/* Logo */}
-        <div style={{padding:'14px 12px', borderBottom:'1px solid #eee', display:'flex', alignItems:'center', gap:8}}>
-          <div style={{width:30,height:30,background:G,borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:13,fontWeight:700,flexShrink:0}}>Ai</div>
-          {sidebarOpen && <div><div style={{fontSize:12,fontWeight:700,color:'#222'}}>AiiTE Admin</div><div style={{fontSize:9,color:'#888'}}>Management</div></div>}
+        <div style={{
+          height: 60, padding: '0 14px', borderBottom: '1px solid #E5E7EB',
+          display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0,
+        }}>
+          <div style={{
+            width: 32, height: 32, background: G, borderRadius: 10,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: '#fff', fontSize: 13, fontWeight: 800, flexShrink: 0,
+          }}>Ai</div>
+          {!collapsed && (
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: '#111827', whiteSpace: 'nowrap' }}>AiiTE Admin</div>
+              <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 2 }}>Management</div>
+            </div>
+          )}
         </div>
 
         {/* Nav */}
-        <nav style={{flex:1, padding:'8px 0', overflowY:'auto'}}>
-          {MENU.map(m => (
-            <div key={m.key}
-              onClick={() => setActive(m.key)}
-              style={{
-                display:'flex', alignItems:'center', gap:10,
-                padding:'9px 14px', cursor:'pointer', fontSize:12,
-                background: active===m.key ? '#E1F5EE' : 'transparent',
-                color: active===m.key ? G : '#555',
-                fontWeight: active===m.key ? 600 : 400,
-                borderLeft: active===m.key ? `3px solid ${G}` : '3px solid transparent',
-                whiteSpace:'nowrap'
-              }}>
-              <span style={{fontSize:15, flexShrink:0}}>{m.icon}</span>
-              {sidebarOpen && m.label}
-            </div>
-          ))}
+        <nav style={{ flex: 1, padding: '10px 0', overflowY: 'auto', overflowX: 'hidden' }}>
+          {MENU.map((m) => {
+            const Icon = m.icon;
+            const on = active === m.key;
+            return (
+              <div key={m.key} onClick={() => setActive(m.key)} title={collapsed ? m.label : ''}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: collapsed ? '10px 0' : '9px 14px',
+                  justifyContent: collapsed ? 'center' : 'flex-start',
+                  cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap',
+                  background: on ? G_SOFT : 'transparent',
+                  color: on ? G : '#6B7280',
+                  fontWeight: on ? 700 : 500,
+                  borderLeft: on ? `3px solid ${G}` : '3px solid transparent',
+                  borderRadius: collapsed ? 0 : '0 10px 10px 0',
+                  marginRight: collapsed ? 0 : 8,
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={e => { if (!on) { e.currentTarget.style.background = '#F9FAFB'; e.currentTarget.style.color = '#374151'; }}}
+                onMouseLeave={e => { if (!on) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#6B7280'; }}}
+              >
+                <Icon size={18} strokeWidth={on ? 2.4 : 1.8} style={{ flexShrink: 0 }} />
+                {!collapsed && <span>{m.label}</span>}
+              </div>
+            );
+          })}
         </nav>
 
         {/* User + Logout */}
-        <div style={{padding:'10px 12px', borderTop:'1px solid #eee'}}>
-          {sidebarOpen && <div style={{fontSize:11,color:'#888',marginBottom:6,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>👤 {user?.name || user?.username}</div>}
-          <button onClick={handleLogout} style={{
-            width:'100%', padding:'6px 0', background:'#fef2f2',
-            color:'#dc2626', border:'1px solid #fecaca', borderRadius:6,
-            fontSize:11, cursor:'pointer', whiteSpace:'nowrap'
-          }}>{sidebarOpen ? '🚪 Logout' : '🚪'}</button>
+        <div style={{ padding: collapsed ? '12px 0' : '12px 14px', borderTop: '1px solid #E5E7EB', flexShrink: 0 }}>
+          {!collapsed && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10,
+              padding: '8px 10px', borderRadius: 10,
+              background: '#F9FAFB', border: '1px solid #E5E7EB',
+            }}>
+              <div style={{
+                width: 28, height: 28, borderRadius: '50%',
+                background: G_SOFT, color: G,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+              }}>
+                <User size={14} strokeWidth={2} />
+              </div>
+              <div style={{ overflow: 'hidden' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#111827', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {user?.name || user?.username || 'Admin'}
+                </div>
+                <div style={{ fontSize: 10, color: '#9CA3AF' }}>Administrator</div>
+              </div>
+            </div>
+          )}
+          <button onClick={handleLogout} title="Logout" style={{
+            width: '100%', padding: '8px 0', background: '#FEF2F2',
+            color: '#DC2626', border: '1px solid #FECACA', borderRadius: 8,
+            fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+          }}>
+            <LogOut size={14} strokeWidth={2.2} />
+            {!collapsed && 'Logout'}
+          </button>
         </div>
-      </div>
+      </aside>
 
-      {/* Main */}
-      <div style={{flex:1, display:'flex', flexDirection:'column', minWidth:0}}>
+      {/* ── Right Side: Topbar + Page ─────────────────────── */}
+      <div style={{
+        flex: 1,
+        minWidth: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100vh',
+        overflow: 'hidden',
+      }}>
+
         {/* Topbar */}
-        <div style={{
-          background:'#fff', borderBottom:'1px solid #eee',
-          padding:'10px 20px', display:'flex', justifyContent:'space-between',
-          alignItems:'center', position:'sticky', top:0, zIndex:10
+        <header style={{
+          height: 60,
+          background: '#fff',
+          borderBottom: '1px solid #E5E7EB',
+          padding: '0 20px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexShrink: 0,
+          zIndex: 10,
         }}>
-          <div style={{display:'flex', alignItems:'center', gap:10}}>
-            <button onClick={()=>setSidebarOpen(o=>!o)} style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:'#555'}}>☰</button>
-            <span style={{fontSize:13, fontWeight:600, color:'#222'}}>
-              {MENU.find(m=>m.key===active)?.icon} {MENU.find(m=>m.key===active)?.label}
-            </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button onClick={() => setCollapsed(c => !c)} style={{
+              width: 36, height: 36, borderRadius: 10,
+              border: '1px solid #E5E7EB', background: '#F9FAFB',
+              color: '#6B7280', display: 'flex', alignItems: 'center',
+              justifyContent: 'center', cursor: 'pointer', transition: 'all 0.15s ease',
+            }}
+              onMouseEnter={e => { e.currentTarget.style.background = G_SOFT; e.currentTarget.style.color = G; e.currentTarget.style.borderColor = '#CFEADC'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = '#F9FAFB'; e.currentTarget.style.color = '#6B7280'; e.currentTarget.style.borderColor = '#E5E7EB'; }}
+            >
+              {collapsed ? <Menu size={16} strokeWidth={2} /> : <ChevronLeft size={16} strokeWidth={2} />}
+            </button>
+            {(() => {
+              const m = MENU.find(m => m.key === active);
+              const Icon = m?.icon;
+              return Icon ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Icon size={17} strokeWidth={2.2} color={G} />
+                  <span style={{ fontSize: 15, fontWeight: 800, color: '#111827', letterSpacing: '-0.01em' }}>{m.label}</span>
+                </div>
+              ) : null;
+            })()}
           </div>
-          <span style={{fontSize:11, color:'#888'}}>
-            {new Date().toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short',year:'numeric'})}
+          <span style={{ fontSize: 12, color: '#9CA3AF', fontWeight: 500 }}>
+            {new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
           </span>
-        </div>
+        </header>
 
-        {/* Page content */}
-        <div style={{flex:1, padding:20, overflowY:'auto'}}>
+        {/* ── Page content — FULL WIDTH, FULL HEIGHT, NO PADDING, NO MAX-WIDTH ── */}
+        <main style={{
+          flex: 1,
+          width: '100%',       /* fills ALL remaining horizontal space */
+          minWidth: 0,
+          overflowY: 'auto',   /* only this scrolls */
+          overflowX: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          /* ❌ NO padding here  */
+          /* ❌ NO maxWidth here */
+          /* ❌ NO margin here   */
+          /* Each page controls its own internal spacing */
+        }}>
           {renderPage()}
-        </div>
+        </main>
       </div>
     </div>
   );
